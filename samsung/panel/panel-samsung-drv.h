@@ -422,6 +422,13 @@ struct exynos_panel_funcs {
 	 * List supported OSC2 clock for panel.
 	 */
 	ssize_t (*list_osc2_clk_khz)(struct exynos_panel *exynos_panel, char *buf);
+
+	/**
+	 * @parse_regulators
+	 *
+	 * Parse regulators for panel.
+	 */
+	int (*parse_regulators)(struct exynos_panel *ctx);
 };
 
 /**
