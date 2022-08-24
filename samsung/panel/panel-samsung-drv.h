@@ -480,6 +480,7 @@ struct exynos_panel_desc {
 	bool dbv_extra_frame;
 	bool is_partial;
 	bool is_panel_idle_supported;
+	bool no_lhbm_rr_constraints;
 	const unsigned int delay_dsc_reg_init_us;
 	const struct brightness_capability *brt_capability;
 	const u32 *bl_range;
@@ -576,6 +577,7 @@ struct exynos_panel {
 	 * at least the delay time provided after a refresh rate update.
 	 */
 	u32 idle_delay_ms;
+	int peak_vrefresh;
 
 	enum exynos_hbm_mode hbm_mode;
 	bool dimming_on;
