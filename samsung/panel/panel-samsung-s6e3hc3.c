@@ -144,12 +144,6 @@ static const u8 display_on[] = { 0x29 };
 static const u8 sleep_in[] = { 0x10 };
 static const u8 freq_update[] = { 0xF7, 0x0F };
 
-static const struct exynos_dsi_cmd s6e3hc3_off_cmds[] = {
-	EXYNOS_DSI_CMD(display_off, 20),
-	EXYNOS_DSI_CMD(sleep_in, 100),
-};
-static DEFINE_EXYNOS_CMD_SET(s6e3hc3_off);
-
 static const struct exynos_dsi_cmd s6e3hc3_lp_cmds[] = {
 	EXYNOS_DSI_CMD(display_off, 0),
 	EXYNOS_DSI_CMD0_REV(unlock_cmd_f0, PANEL_REV_GE(PANEL_REV_PROTO1_1)),
@@ -699,6 +693,7 @@ static const struct exynos_dsi_cmd s6e3hc3_init_cmds[] = {
 	EXYNOS_DSI_CMD_SEQ(0xB9, 0xB1, 0xA1),		/* SEQ_TSP_SYNC_ON */
 	EXYNOS_DSI_CMD_SEQ(0xB0, 0x00, 0x05, 0xF2),	/* SEQ_GLOBAL_TSP_SYNC */
 	EXYNOS_DSI_CMD_SEQ(0xF2, 0x52),			/* SEQ_TSP_SYNC_ON */
+	EXYNOS_DSI_CMD0(lock_cmd_f0),
 
 	EXYNOS_DSI_CMD_SEQ(0x2A, 0x00, 0x00, 0x05, 0x9F), /* CASET */
 	EXYNOS_DSI_CMD_SEQ(0x2B, 0x00, 0x00, 0x0C, 0x2F), /* PASET */
@@ -839,6 +834,7 @@ static int s6e3hc3_enable(struct drm_panel *panel)
 	struct exynos_panel *ctx = container_of(panel, struct exynos_panel, panel);
 	const struct exynos_panel_mode *pmode = ctx->current_mode;
 	const struct drm_display_mode *mode;
+	const bool needs_reset = !is_panel_enabled(ctx);
 	bool is_fhd;
 
 	if (!pmode) {
@@ -850,13 +846,17 @@ static int s6e3hc3_enable(struct drm_panel *panel)
 
 	dev_dbg(ctx->dev, "%s\n", __func__);
 
-	exynos_panel_reset(ctx);
+	if (needs_reset)
+		exynos_panel_reset(ctx);
 
 	/* DSC related configuration */
 	EXYNOS_PPS_WRITE_BUF(ctx, is_fhd ? FHD_PPS_SETTING : WQHD_PPS_SETTING);
-	exynos_panel_send_cmd_set(ctx, &s6e3hc3_init_cmd_set);
+	if (needs_reset)
+		exynos_panel_send_cmd_set(ctx, &s6e3hc3_init_cmd_set);
 
-	EXYNOS_DCS_WRITE_SEQ(ctx, 0xC3, is_fhd ? 0x01: 0x00);
+	EXYNOS_DCS_BUF_ADD_SET(ctx, unlock_cmd_f0);
+	EXYNOS_DCS_BUF_ADD(ctx, 0xC3, is_fhd ? 0x01: 0x00);
+	EXYNOS_DCS_BUF_ADD_SET_AND_FLUSH(ctx, lock_cmd_f0);
 
 	s6e3hc3_write_display_mode(ctx, mode); /* dimming and HBM */
 	s6e3hc3_change_frequency(ctx, pmode);
@@ -869,8 +869,29 @@ static int s6e3hc3_enable(struct drm_panel *panel)
 
 	if (pmode->exynos_mode.is_lp_mode)
 		exynos_panel_set_lp_mode(ctx, pmode);
-	else
+	else if (needs_reset || (ctx->panel_state == PANEL_STATE_BLANK))
 		EXYNOS_DCS_WRITE_TABLE(ctx, display_on);
+
+	return 0;
+}
+
+static int s6e3hc3_disable(struct drm_panel *panel)
+{
+	struct exynos_panel *ctx = container_of(panel, struct exynos_panel, panel);
+	int ret;
+
+	/* skip disable sequence if going through modeset */
+	if (ctx->panel_state == PANEL_STATE_MODESET)
+		return 0;
+
+	ret = exynos_panel_disable(panel);
+	if (ret)
+		return ret;
+
+	EXYNOS_DCS_WRITE_TABLE_DELAY(ctx, 20, display_off);
+
+	if (ctx->panel_state == PANEL_STATE_OFF)
+		EXYNOS_DCS_WRITE_TABLE_DELAY(ctx, 100, sleep_in);
 
 	return 0;
 }
@@ -1344,7 +1365,7 @@ static int s6e3hc3_panel_probe(struct mipi_dsi_device *dsi)
 }
 
 static const struct drm_panel_funcs s6e3hc3_drm_funcs = {
-	.disable = exynos_panel_disable,
+	.disable = s6e3hc3_disable,
 	.unprepare = exynos_panel_unprepare,
 	.prepare = exynos_panel_prepare,
 	.enable = s6e3hc3_enable,
@@ -1416,7 +1437,6 @@ const struct exynos_panel_desc samsung_s6e3hc3 = {
 	.bl_num_ranges = ARRAY_SIZE(s6e3hc3_bl_range),
 	.modes = s6e3hc3_modes,
 	.num_modes = ARRAY_SIZE(s6e3hc3_modes),
-	.off_cmd_set = &s6e3hc3_off_cmd_set,
 	.lp_mode = s6e3hc3_lp_modes,
 	.lp_mode_count = ARRAY_SIZE(s6e3hc3_lp_modes),
 	.lp_cmd_set = &s6e3hc3_lp_cmd_set,
