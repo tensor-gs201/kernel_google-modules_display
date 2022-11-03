@@ -442,7 +442,7 @@ static void exynos_atomic_bts_post_update(struct drm_device *dev,
 	for_each_new_crtc_in_state(old_state, crtc, new_crtc_state, i) {
 		decon = crtc_to_decon(crtc);
 
-		if (new_crtc_state->planes_changed && new_crtc_state->active) {
+		if (new_crtc_state->active) {
 
 			/*
 			 * keeping a copy of comp src in dpp after it has been
@@ -701,8 +701,13 @@ static void exynos_atomic_commit_tail(struct drm_atomic_state *old_state)
 			hibernation_unblock_enter(decon->hibernation);
 		if (disabling_crtc_mask & drm_crtc_mask(crtc))
 			pm_runtime_put_sync(decon->dev);
-		if (new_crtc_state->plane_mask && decon->fb_handover.rmem)
-			exynos_rmem_free(decon);
+		if (decon->fb_handover.rmem) {
+			struct exynos_drm_crtc_state *exynos_crtc_state =
+				to_exynos_crtc_state(new_crtc_state);
+
+			if (!exynos_crtc_state->skip_update)
+				exynos_rmem_free(decon);
+		}
 	}
 
 	drm_atomic_helper_commit_hw_done(old_state);
